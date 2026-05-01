@@ -1,0 +1,39 @@
+# server.py  (replaces main.py as entry point)
+from fastapi import FastAPI, WebSocket
+from fastapi.staticfiles import StaticFiles
+import asyncio, json
+
+app = FastAPI()
+clients: list[WebSocket] = []
+
+@app.websocket("/ws")
+async def ws_endpoint(ws: WebSocket):
+    await ws.accept()
+    clients.append(ws)
+    try:
+        while True:
+            await ws.receive_text()   # keep alive
+    except:
+        clients.remove(ws)
+
+async def broadcast(event: dict):
+    dead = []
+    for c in clients:
+        try:
+            await c.send_json(event)
+        except:
+            dead.append(c)
+    for c in dead:
+        clients.remove(c)
+
+@app.get("/api/anomalies")
+def get_anomalies():
+    import csv
+    with open("anomalies.csv") as f:
+        return list(csv.DictReader(f))
+
+@app.post("/api/block/{ip}")
+def manual_block(ip: str):
+    from firewall import block_ip
+    ok, msg = block_ip(ip, "manual")
+    return {"ok": ok, "msg": msg}

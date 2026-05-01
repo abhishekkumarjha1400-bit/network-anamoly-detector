@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Network Anomaly Dashboard</title>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0d1117; color: #c9d1d9; font-family: monospace; padding: 20px; }
+    h1 { color: #58a6ff; margin-bottom: 20px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; }
+    .card h2 { color: #58a6ff; font-size: 14px; margin-bottom: 10px; }
+    #stats { display: flex; gap: 20px; margin-bottom: 20px; }
+    .stat-box { background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+                padding: 14px 24px; text-align: center; flex: 1; }
+    .stat-box .num { font-size: 32px; font-weight: bold; color: #58a6ff; }
+    .stat-box .label { font-size: 12px; color: #8b949e; margin-top: 4px; }
+    #packet-feed { height: 220px; overflow-y: auto; font-size: 12px; }
+    .packet-row { padding: 4px 6px; border-bottom: 1px solid #21262d; }
+    .packet-row.anomaly { background: #2d1a1a; color: #ff7b72; }
+    .packet-row.normal  { color: #3fb950; }
+    #blocked-list { height: 220px; overflow-y: auto; font-size: 12px; }
+    .blocked-row { padding: 4px 6px; border-bottom: 1px solid #21262d; color: #f85149; }
+    canvas { max-height: 200px; }
+  </style>
+</head>
+<body>
+  <h1>🛡️ Network Anomaly Detector — Live Dashboard</h1>
+
+  <div id="stats">
+    <div class="stat-box"><div class="num" id="total-count">0</div><div class="label">Total Packets</div></div>
+    <div class="stat-box"><div class="num" id="anomaly-count">0</div><div class="label">Anomalies</div></div>
+    <div class="stat-box"><div class="num" id="blocked-count">0</div><div class="label">Blocked IPs</div></div>
+    <div class="stat-box"><div class="num" id="anomaly-rate">0%</div><div class="label">Anomaly Rate</div></div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>📡 Live Packet Feed</h2>
+      <div id="packet-feed"></div>
+    </div>
+    <div class="card">
+      <h2>🚫 Blocked IPs</h2>
+      <div id="blocked-list"></div>
+    </div>
+    <div class="card" style="grid-column: span 2;">
+      <h2>📊 Anomaly Rate Over Time</h2>
+      <canvas id="chart"></canvas>
+    </div>
+  </div>
+
+<script>
+  const socket = io();
+  let total = 0, anomalies = 0, blocked = 0;
+  const labels = [], dataPoints = [];
+
+  // Chart setup
+  const ctx = document.getElementById("chart").getContext("2d");
+  const chart = new Chart(ctx, {
+    type: "line",
+    data: { labels, datasets: [{ label: "Anomaly %", data: dataPoints,
+      borderColor: "#ff7b72", backgroundColor: "rgba(255,123,114,0.1)",
+      tension: 0.4, fill: true }] },
+    options: { animation: false, scales: {
+      x: { ticks: { color: "#8b949e" }, grid: { color: "#21262d" } },
+      y: { ticks: { color: "#8b949e" }, grid: { color: "#21262d" }, min: 0, max: 100 }
+    }, plugins: { legend: { labels: { color: "#c9d1d9" } } } }
+  });
+
+  socket.on("packet", d => {
+    total++;
+    if (d.is_anomaly) anomalies++;
+
+    document.getElementById("total-count").textContent  = total;
+    document.getElementById("anomaly-count").textContent = anomalies;
+    const rate = ((anomalies / total) * 100).toFixed(1);
+    document.getElementById("anomaly-rate").textContent  = rate + "%";
+
+    // Add to feed
+    const feed = document.getElementById("packet-feed");
+    const row  = document.createElement("div");
+    row.className = "packet-row " + (d.is_anomaly ? "anomaly" : "normal");
+    row.textContent = `[${d.model}] ${d.src_ip}:${d.src_port} → ${d.dst_ip}:${d.dst_port} | score: ${d.score}`;
+    feed.prepend(row);
+    if (feed.children.length > 100) feed.lastChild.remove();
+
+    // Update chart every 10 packets
+    if (total % 10 === 0) {
+      const now = new Date().toLocaleTimeString();
+      labels.push(now);
+      dataPoints.push(parseFloat(rate));
+      if (labels.length > 30) { labels.shift(); dataPoints.shift(); }
+      chart.update();
+    }
+  });
+
+  socket.on("blocked", d => {
+    blocked++;
+    document.getElementById("blocked-count").textContent = blocked;
+    const list = document.getElementById("blocked-list");
+    const row  = document.createElement("div");
+    row.className = "blocked-row";
+    row.textContent = `🚫 ${d.ip} — ${d.reason}`;
+    list.prepend(row);
+  });
+</script>
+</body>
+</html>

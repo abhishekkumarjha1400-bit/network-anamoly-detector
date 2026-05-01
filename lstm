@@ -1,0 +1,31 @@
+# model_lstm.py
+import numpy as np
+from collections import deque
+
+class LSTMModel:
+    def __init__(self, seq_len=20, threshold=0.08):
+        self.seq_len   = seq_len
+        self.threshold = threshold
+        self.sequences = {}   # per-src_ip sliding window
+        self._model    = None
+        self._build()
+
+    def _build(self):
+        from tensorflow import keras
+        inp = keras.Input(shape=(self.seq_len, 6))
+        x   = keras.layers.LSTM(32, return_sequences=True)(inp)
+        x   = keras.layers.LSTM(16)(x)
+        out = keras.layers.Dense(6)(x)         # reconstruct next vector
+        self.model = keras.Model(inp, out)
+        self.model.compile(optimizer="adam", loss="mse")
+
+    def update(self, src_ip, vector):
+        if src_ip not in self.sequences:
+            self.sequences[src_ip] = deque(maxlen=self.seq_len + 1)
+        self.sequences[src_ip].append(vector)
+        if len(self.sequences[src_ip]) < self.seq_len + 1:
+            return False, 0.0
+        seq   = np.array(list(self.sequences[src_ip])[:-1])[np.newaxis]
+        pred  = self.model.predict(seq, verbose=0)[0]
+        error = float(np.mean((pred - vector) ** 2))
+        return error > self.threshold, error

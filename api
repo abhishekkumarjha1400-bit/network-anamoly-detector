@@ -1,0 +1,23 @@
+# ai_explainer.py
+import requests, json
+
+def explain_threat(features: dict, threat_type: str, severity: str) -> str:
+    prompt = f"""You are a cybersecurity analyst. Analyze this network event and give a 3-sentence plain-English explanation of what's happening and what to do.
+
+Event: {threat_type} ({severity})
+Source IP: {features.get('src_ip')} → Destination: {features.get('dst_ip')}:{features.get('dst_port')}
+Protocol: {features.get('protocol')} | Packet size: {features.get('pkt_size')} bytes | TCP flags: {features.get('tcp_flags')}
+
+Respond in this JSON format:
+{{"what": "...", "why_dangerous": "...", "action": "..."}}"""
+
+    r = requests.post(
+        "https://api.anthropic.com/v1/messages",
+        headers={"x-api-key": os.environ["ANTHROPIC_API_KEY"],
+                 "anthropic-version": "2023-06-01",
+                 "content-type": "application/json"},
+        json={"model": "claude-sonnet-4-20250514", "max_tokens": 200,
+              "messages": [{"role": "user", "content": prompt}]},
+        timeout=5
+    )
+    return json.loads(r.json()["content"][0]["text"])

@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: network-security-dashboard
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python dashboard.py
+    plan: free
